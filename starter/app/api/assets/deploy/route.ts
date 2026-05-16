@@ -16,45 +16,27 @@ type Location = {
 function parseDeployLocation(raw: string): Location | null {
   const value = raw.trim();
 
-  if (!value.includes("/")) {
+  const parts = value.split("/").map((x) => x.trim()).filter(Boolean);
+
+  // Required format:
+  // Lab-Building-A/Bay-12/Aisle-3/B-04/P-02
+  if (parts.length !== 5) {
     return null;
   }
 
-  const parts = value.split("/").map((x) => x.trim()).filter(Boolean);
+  const [site, room, row, rack, ru] = parts;
 
-  // Example with row:
-  // Lab-Building-A/Bay-12/Aisle-3/B-04/P-02
-  if (parts.length >= 5) {
-    const [site, room, row, rack, ru] = parts;
-
-    if (!site || !room || !rack || !ru) return null;
-
-    return {
-      site,
-      room,
-      row,
-      rack,
-      ru,
-    };
+  if (!site || !room || !row || !rack || !ru) {
+    return null;
   }
 
-  // Example without row:
-  // Lab-Building-A/Bay-12/B-04/P-02
-  if (parts.length === 4) {
-    const [site, room, rack, ru] = parts;
-
-    if (!site || !room || !rack || !ru) return null;
-
-    return {
-      site,
-      room,
-      row: null,
-      rack,
-      ru,
-    };
-  }
-
-  return null;
+  return {
+    site,
+    room,
+    row,
+    rack,
+    ru,
+  };
 }
 
 export async function POST(req: Request) {
