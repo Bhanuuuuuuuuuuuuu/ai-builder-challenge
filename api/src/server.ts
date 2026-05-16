@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import { ulid } from "ulid";
@@ -66,3 +67,23 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   return app;
 }
+
+let vercelServer: FastifyInstance | null = null;
+
+async function getVercelServer(): Promise<FastifyInstance> {
+  if (!vercelServer) {
+    vercelServer = await buildServer();
+    await vercelServer.ready();
+  }
+
+  return vercelServer;
+}
+
+export default async function handler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const app = await getVercelServer();
+  app.server.emit("request", req, res);
+}
+
