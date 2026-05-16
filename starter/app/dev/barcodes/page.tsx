@@ -46,7 +46,7 @@ async function getAssetExamples(): Promise<BarcodeItem[]> {
         group: "Assets",
         label: "Disposed asset",
         asset: firstAssetByState(assets, "disposed"),
-        note: "Useful for invalid scan transition checks.",
+        note: "Useful for invalid transition checks.",
       },
       {
         group: "Assets",
@@ -154,16 +154,122 @@ async function getBarcodeItems(): Promise<RenderedBarcodeItem[]> {
 
 export default async function DevBarcodesPage() {
   const items = await getBarcodeItems();
-
   const groups = Array.from(new Set(items.map((item) => item.group)));
 
   return (
-    <main className="space-y-8 p-6">
-      <div className="max-w-3xl">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-950">
-          Dev barcodes
-        </h1>
-        <p className="mt-2 text-slate-600">
+    <main className="barcodePage">
+      <style>{`
+        .barcodePage {
+          max-width: 1120px;
+          margin: 0 auto;
+          padding: 32px;
+          font-family: Arial, Helvetica, sans-serif;
+          color: #0f172a;
+        }
+
+        .barcodeHeader {
+          margin-bottom: 32px;
+        }
+
+        .barcodeHeader h1 {
+          font-size: 36px;
+          line-height: 1.1;
+          margin: 0;
+        }
+
+        .barcodeHeader p {
+          margin-top: 10px;
+          max-width: 760px;
+          color: #475569;
+          font-size: 16px;
+          line-height: 1.6;
+        }
+
+        .barcodeSection {
+          margin-top: 36px;
+        }
+
+        .barcodeSection h2 {
+          font-size: 22px;
+          margin-bottom: 16px;
+        }
+
+        .barcodeGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 18px;
+        }
+
+        .barcodeCard {
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          background: white;
+          padding: 20px;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+          break-inside: avoid;
+        }
+
+        .qrWrap {
+          display: flex;
+          justify-content: center;
+        }
+
+        .barcodeCard h3 {
+          font-size: 17px;
+          margin: 16px 0 8px;
+        }
+
+        .barcodeValue {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 10px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 13px;
+          overflow-wrap: anywhere;
+        }
+
+        .barcodeNote {
+          color: #475569;
+          font-size: 14px;
+          line-height: 1.5;
+          margin-top: 10px;
+        }
+
+        .demoBox {
+          margin-top: 36px;
+          border: 1px solid #cbd5e1;
+          border-radius: 16px;
+          background: #f8fafc;
+          padding: 20px;
+        }
+
+        .demoBox h2 {
+          margin: 0 0 8px;
+          font-size: 18px;
+        }
+
+        .demoBox ol {
+          margin: 0;
+          padding-left: 22px;
+          color: #334155;
+          line-height: 1.7;
+        }
+
+        @media print {
+          .barcodePage {
+            padding: 16px;
+          }
+
+          .barcodeCard {
+            box-shadow: none;
+          }
+        }
+      `}</style>
+
+      <div className="barcodeHeader">
+        <h1>Dev barcodes</h1>
+        <p>
           Print this page or scan directly from the screen. These QR codes cover
           the common demo paths: receive, store, deploy, transfer, and error
           handling.
@@ -171,40 +277,33 @@ export default async function DevBarcodesPage() {
       </div>
 
       {groups.map((group) => (
-        <section key={group} className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-950">{group}</h2>
+        <section key={group} className="barcodeSection">
+          <h2>{group}</h2>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="barcodeGrid">
             {items
               .filter((item) => item.group === group)
               .map((item) => (
-                <div
-                  key={item.value}
-                  className="rounded-xl border bg-white p-5 shadow-sm break-inside-avoid"
-                >
+                <div key={item.value} className="barcodeCard">
                   <div
-                    className="mx-auto flex justify-center"
+                    className="qrWrap"
                     dangerouslySetInnerHTML={{ __html: item.svg }}
                   />
 
-                  <h3 className="mt-4 font-semibold text-slate-950">
-                    {item.label}
-                  </h3>
+                  <h3>{item.label}</h3>
 
-                  <p className="mt-2 rounded-lg bg-slate-50 p-2 font-mono text-sm text-slate-800">
-                    {item.value}
-                  </p>
+                  <div className="barcodeValue">{item.value}</div>
 
-                  <p className="mt-2 text-sm text-slate-600">{item.note}</p>
+                  <p className="barcodeNote">{item.note}</p>
                 </div>
               ))}
           </div>
         </section>
       ))}
 
-      <section className="rounded-xl border bg-slate-50 p-5 text-sm text-slate-700">
-        <h2 className="font-semibold text-slate-950">Suggested demo path</h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-5">
+      <section className="demoBox">
+        <h2>Suggested demo path</h2>
+        <ol>
           <li>Reset the namespace.</li>
           <li>Receive C0009001 with SN-DEMO-1.</li>
           <li>Store C0009001 at the storage location.</li>
