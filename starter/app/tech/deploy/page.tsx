@@ -200,7 +200,7 @@ export default function TechDeployPage() {
   }
 
   const messageIsSuccess = step === "done";
-  const canContinueToLocation = asset && isDeployAllowed(asset.state);
+  const canContinueToLocation = asset !== null && isDeployAllowed(asset.state);
 
   return (
     <div className="max-w-xl mx-auto p-4 space-y-6">
