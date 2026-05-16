@@ -13,11 +13,14 @@ type Location = {
   ru?: string | null;
 };
 
+type AssetBeforeStore = {
+  asset_tag: string;
+  state: string;
+};
+
 function parseLocation(raw: string): Location {
   const value = raw.trim();
 
-  // Example:
-  // Lab-Building-A/Bay-12/Aisle-3/B-04/P-02
   if (value.includes("/")) {
     const [site, room, row, rack, ru] = value.split("/").map((x) => x.trim());
 
@@ -30,7 +33,6 @@ function parseLocation(raw: string): Location {
     };
   }
 
-  // Simple typed scan like Rack-B-04
   return {
     site: "Lab-Building-A",
     room: "Storage",
@@ -38,6 +40,58 @@ function parseLocation(raw: string): Location {
     rack: value,
     ru: null,
   };
+}
+
+async function readError(res: Response): Promise<string> {
+  const text = await res.text();
+
+  try {
+    const data = JSON.parse(text);
+    return data?.error?.message || data?.error?.code || text;
+  } catch {
+    return text;
+  }
+}
+
+async function getAssetBeforeStore(
+  token: string,
+  assetTag: string,
+): Promise<AssetBeforeStore | null> {
+  const res = await fetch(`${UPSTREAM}/assets/${encodeURIComponent(assetTag)}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    return null;
+  }
+
+  return (await res.json()) as AssetBeforeStore;
+}
+
+async function removeFacilitiesRack(
+  token: string,
+  assetTag: string,
+): Promise<void> {
+  const res = await fetch(`${UPSTREAM}/mock/facilities/spaces`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      tagged_id: assetTag,
+      rack_location: null,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Facilities de-rack failed: ${await readError(res)}`);
+  }
 }
 
 export async function POST(req: Request) {
@@ -64,33 +118,61 @@ export async function POST(req: Request) {
     );
   }
 
+  const beforeStore = await getAssetBeforeStore(token, assetTag);
   const location = parseLocation(locationTag);
 
-  const upstreamRes = await fetch(
-    `${UPSTREAM}/scans/store`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        asset_tag: assetTag,
-        location,
-        user_id: "tech-jane",
-        scan_payload: `${assetTag} ${locationTag}`,
-      }),
-      cache: "no-store",
+  const scanRes = await fetch(`${UPSTREAM}/scans/store`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({
+      asset_tag: assetTag,
+      location,
+      user_id: "tech-jane",
+      scan_payload: `${assetTag} ${locationTag}`,
+    }),
+    cache: "no-store",
+  });
 
-  const text = await upstreamRes.text();
+  const text = await scanRes.text();
+
+  if (!scanRes.ok) {
+    return new NextResponse(text, {
+      status: scanRes.status,
+      headers: {
+        "Content-Type":
+          scanRes.headers.get("content-type") ?? "application/json",
+      },
+    });
+  }
+
+  if (beforeStore?.state === "in_service") {
+    try {
+      await removeFacilitiesRack(token, assetTag);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "external_sync_failed",
+            message:
+              err instanceof Error
+                ? err.message
+                : "Store succeeded, but facilities sync failed.",
+          },
+          asset: JSON.parse(text),
+        },
+        { status: 502 },
+      );
+    }
+  }
 
   return new NextResponse(text, {
-    status: upstreamRes.status,
+    status: scanRes.status,
     headers: {
       "Content-Type":
-        upstreamRes.headers.get("content-type") ?? "application/json",
+        scanRes.headers.get("content-type") ?? "application/json",
     },
   });
 }

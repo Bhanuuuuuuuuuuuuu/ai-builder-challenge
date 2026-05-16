@@ -8,18 +8,30 @@ const UPSTREAM = (process.env.API_BASE_URL ?? "http://localhost:8080/v1").replac
 type Location = {
   site: string;
   room: string;
-  row?: string | null;
+  row: string;
   rack: string;
   ru: string;
 };
 
+type AssetResponse = {
+  asset_tag: string;
+  location: Location;
+};
+
+type FinanceRecord = {
+  tag: string;
+  status: string;
+  book_value_usd: number;
+  capitalized_on: string | null;
+};
+
 function parseDeployLocation(raw: string): Location | null {
-  const value = raw.trim();
+  const parts = raw
+    .trim()
+    .split("/")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
-  const parts = value.split("/").map((x) => x.trim()).filter(Boolean);
-
-  // Required format:
-  // Lab-Building-A/Bay-12/Aisle-3/B-04/P-02
   if (parts.length !== 5) {
     return null;
   }
@@ -37,6 +49,91 @@ function parseDeployLocation(raw: string): Location | null {
     rack,
     ru,
   };
+}
+
+function formatRackLocation(location: Location): string {
+  return [
+    location.site,
+    location.room,
+    location.row,
+    location.rack,
+    location.ru,
+  ].join("/");
+}
+
+async function readError(res: Response): Promise<string> {
+  const text = await res.text();
+
+  try {
+    const data = JSON.parse(text);
+    return data?.error?.message || data?.error?.code || text;
+  } catch {
+    return text;
+  }
+}
+
+async function postFacilitiesRack(
+  token: string,
+  assetTag: string,
+  rackLocation: string,
+): Promise<void> {
+  const res = await fetch(`${UPSTREAM}/mock/facilities/spaces`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      tagged_id: assetTag,
+      rack_location: rackLocation,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Facilities sync failed: ${await readError(res)}`);
+  }
+}
+
+async function postFinanceCapitalized(
+  token: string,
+  assetTag: string,
+): Promise<void> {
+  const financeRes = await fetch(`${UPSTREAM}/mock/finance/equipment`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  let existing: FinanceRecord | undefined;
+
+  if (financeRes.ok) {
+    const records = (await financeRes.json()) as FinanceRecord[];
+    existing = records.find((record) => record.tag === assetTag);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const res = await fetch(`${UPSTREAM}/mock/finance/equipment`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      tag: assetTag,
+      status: "capitalized",
+      book_value_usd: existing?.book_value_usd ?? 0,
+      capitalized_on: existing?.capitalized_on ?? today,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Finance sync failed: ${await readError(res)}`);
+  }
 }
 
 export async function POST(req: Request) {
@@ -71,14 +168,14 @@ export async function POST(req: Request) {
         error: {
           code: "incomplete_deploy_location",
           message:
-            "Deploy location must include site, room, rack, and RU. Example: Lab-Building-A/Bay-12/Aisle-3/B-04/P-02",
+            "Deploy location must include site, room, row, rack, and RU. Example: Lab-Building-A/Bay-12/Aisle-3/B-04/P-02",
         },
       },
       { status: 422 },
     );
   }
 
-  const upstreamRes = await fetch(`${UPSTREAM}/scans/deploy`, {
+  const scanRes = await fetch(`${UPSTREAM}/scans/deploy`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -93,13 +190,41 @@ export async function POST(req: Request) {
     cache: "no-store",
   });
 
-  const text = await upstreamRes.text();
+  const text = await scanRes.text();
 
-  return new NextResponse(text, {
-    status: upstreamRes.status,
-    headers: {
-      "Content-Type":
-        upstreamRes.headers.get("content-type") ?? "application/json",
-    },
-  });
+  if (!scanRes.ok) {
+    return new NextResponse(text, {
+      status: scanRes.status,
+      headers: {
+        "Content-Type":
+          scanRes.headers.get("content-type") ?? "application/json",
+      },
+    });
+  }
+
+  const deployedAsset = JSON.parse(text) as AssetResponse;
+  const rackLocation = formatRackLocation(deployedAsset.location ?? location);
+
+  try {
+    await Promise.all([
+      postFacilitiesRack(token, assetTag, rackLocation),
+      postFinanceCapitalized(token, assetTag),
+    ]);
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "external_sync_failed",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Deploy succeeded, but external sync failed.",
+        },
+        asset: deployedAsset,
+      },
+      { status: 502 },
+    );
+  }
+
+  return NextResponse.json(deployedAsset, { status: scanRes.status });
 }
