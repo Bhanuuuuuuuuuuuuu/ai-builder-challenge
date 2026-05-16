@@ -43,3 +43,35 @@ pnpm --filter @asset-tracking/starter test
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+## Candidate notes
+
+### Three calls I nearly made the other way
+
+1. **Browser writes vs server route handlers**
+
+   I nearly called the upstream scan APIs directly from the browser because it would have been faster to wire up. I chose server route handlers instead so the API token stays server-side. This also gave me one place to coordinate scan writes with facilities and finance sync.
+
+2. **Raw diff reconciliation vs categorized report**
+
+   I nearly made reconciliation a simple table of mismatched fields. I chose a categorized report instead because an asset manager needs to know what to investigate first, not just see that two systems disagree. Critical issues like missing rack records are separated from lower-priority finance warnings.
+
+3. **Letting the backend catch every scan mistake vs pre-checking in the UI**
+
+   I nearly let the backend reject all invalid deploy attempts. I chose to load the asset after scanning and show its current state first, because a tech should know before committing that an asset is already in service, disposed, or not yet received.
+
+### Microcopy I chose carefully
+
+For deploy, I used messages like:
+
+> Cannot deploy: This asset is already in service, so it cannot be deployed again.
+
+I chose this wording because it tells the tech exactly what happened, why the action stopped, and what not to retry. It avoids vague errors like “invalid transition.”
+
+### Notes on external system sync
+
+Deploy writes are handled in the server route. After a successful deploy, the app updates facilities with the rack location and finance with capitalized status. Store-from-in-service removes the facilities rack row. I kept these writes server-side for the same reason as reconciliation: the browser should never receive the upstream bearer token.
+
+### What I intentionally did not build
+
+I did not build offline mode, RMA UI, hardware driver integration, or bulk import/export. Those are useful in a real system, but for this challenge I focused on the hot scan path, manager information design, reconciliation depth, and clear recovery paths for mistakes.
